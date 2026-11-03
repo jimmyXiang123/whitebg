@@ -75,14 +75,33 @@ def round_rect_pts(x1, y1, x2, y2, r):
 
 
 class RoundedFrame(tk.Canvas):
-    """白色圆角卡片，内容放 inner 子框架里。"""
+    """白色圆角卡片，内容放 inner 子框架里。
 
-    def __init__(self, master, radius=RADIUS, bg=COL_CARD, pad=CARD_PAD, **kw):
-        super().__init__(master, bg=COL_BG, highlightthickness=0, bd=0, **kw)
+    ``autosize=True``（默认）时卡片高度跟随内容——Canvas 默认会"请求" 265px，
+    三张卡片各占 265 就会把最后一张（含完成面板）顶出窗口；
+    预览区这种需要撑满剩余空间的卡片则传 ``autosize=False`` + 一个较小的初值。
+    """
+
+    def __init__(self, master, radius=RADIUS, bg=COL_CARD, pad=CARD_PAD,
+                 autosize=True, height=1, **kw):
+        super().__init__(master, bg=COL_BG, highlightthickness=0, bd=0, height=height, **kw)
         self._radius, self._fill, self._pad = radius, bg, pad
+        self._autosize = autosize
         self.inner = tk.Frame(self, bg=bg)
         self._win = self.create_window(pad, pad, anchor="nw", window=self.inner)
         self.bind("<Configure>", self._redraw)
+        if autosize:
+            self.inner.bind("<Configure>", self._sync_height)
+            # 首次布局时 inner 的 <Configure> 早于绑定发生，这里补一次同步
+            self.after_idle(self._sync_height)
+
+    def _sync_height(self, event=None) -> None:
+        if not self._autosize:
+            return
+        h = event.height if event is not None else self.inner.winfo_reqheight()
+        target = h + 2 * self._pad
+        if target > 1 and target != int(self.cget("height")):
+            self.configure(height=target)
 
     def _redraw(self, _e=None):
         w, h = self.winfo_width(), self.winfo_height()
@@ -228,6 +247,12 @@ class WhiteBgApp:
         self.root.after(100, self._poll)
         self.root.after(1500, self._warmup)  # 后台预热模型，转换零等待
 
+    @staticmethod
+    def _short_path(path: Path, limit: int = 44) -> str:
+        """路径太长时只显示尾段，避免把同一行的其它控件挤出窗口。"""
+        text = str(path)
+        return text if len(text) <= limit else "…" + text[-(limit - 1):]
+
     def _btn(self, parent, text, command, accent=True, width=120, height=40,
              font_size=11, bold=False, bg=None, fg=None):
         b = iOSButton(parent, text, command=command, accent=accent, width=width,
@@ -274,29 +299,34 @@ class WhiteBgApp:
         row2 = tk.Frame(c1, bg=COL_CARD)
         row2.pack(fill=tk.X, pady=(14, 0))
         tk.Label(row2, text="输出位置", bg=COL_CARD, fg=COL_SUB, font=F(10)).pack(side=tk.LEFT)
-        self.out_label = tk.Label(row2, text=str(self.out_dir), bg=COL_CARD,
-                                  fg=COL_TEXT, font=F(11))
+        # 路径按字符数限制宽度并锚定左侧：路径很长时只显示尾段，
+        # 否则会把右侧的「模型 / 速度优先 / 质量优先」整排挤出窗口。
+        self.out_label = tk.Label(row2, text=self._short_path(self.out_dir), bg=COL_CARD,
+                                  fg=COL_TEXT, font=F(11), width=44, anchor="w")
         self.out_label.pack(side=tk.LEFT, padx=(8, 0))
         self._btn(row2, "更改…", self.choose_output, accent=False, width=76,
                   height=30, font_size=10).pack(side=tk.LEFT, padx=(8, 0))
-        tk.Label(row2, text="模型", bg=COL_CARD, fg=COL_SUB, font=F(10)).pack(side=tk.RIGHT, padx=(6, 0))
         style = ttk.Style()
         style.theme_use("clam")
         style.configure("IOS.TCombobox", fieldbackground=COL_CARD, background=COL_CARD,
                         foreground=COL_TEXT, arrowcolor=COL_ACCENT, bordercolor=COL_TRACK,
                         lightcolor=COL_TRACK, darkcolor=COL_TRACK, padding=4)
+        # side=RIGHT 时"先 pack 的靠最右"，所以先放下拉框，再把「模型」标签贴到它左边
         ttk.Combobox(row2, textvariable=self.model_var, values=MODELS, state="readonly",
                      width=22, style="IOS.TCombobox", font=F(10)).pack(side=tk.RIGHT)
-        self._btn(row2, "速度优先", lambda: self._set_model(SPEED_MODEL, "速度优先（u2net，约 2 秒/张）"),
-                  accent=False, width=88, height=30, font_size=10).pack(side=tk.RIGHT, padx=(0, 12))
+        tk.Label(row2, text="模型", bg=COL_CARD, fg=COL_SUB, font=F(10)).pack(side=tk.RIGHT, padx=(0, 6))
         self._btn(row2, "质量优先", lambda: self._set_model(QUALITY_MODEL, "质量优先（birefnet-lite，约 10 秒/张）"),
                   accent=False, width=100, height=30, font_size=10).pack(side=tk.RIGHT, padx=(0, 12))
+        self._btn(row2, "速度优先", lambda: self._set_model(SPEED_MODEL, "速度优先（u2net，约 2 秒/张）"),
+                  accent=False, width=88, height=30, font_size=10).pack(side=tk.RIGHT, padx=(0, 12))
 
-        # 卡片2：预览
-        card2 = RoundedFrame(outer)
+        # 卡片2：预览（高度交给 expand 撑满，不跟随内容，否则图片一多就把底栏顶飞）
+        card2 = RoundedFrame(outer, autosize=False, height=180)
         card2.pack(fill=tk.BOTH, expand=True, pady=(14, 0))
         c2 = card2.inner
-        self.canvas = tk.Canvas(c2, bg=COL_CARD, highlightthickness=0, bd=0)
+        # height 给一个小值：Canvas 默认 265px 的"请求高度"会把卡片3（含完成面板）
+        # 顶出窗口，expand=True 仍会把它撑满剩余空间，但允许在需要时收缩。
+        self.canvas = tk.Canvas(c2, bg=COL_CARD, highlightthickness=0, bd=0, height=180)
         vsb = ttk.Scrollbar(c2, orient=tk.VERTICAL, command=self.canvas.yview)
         self.canvas.configure(yscrollcommand=vsb.set)
         vsb.pack(side=tk.RIGHT, fill=tk.Y)
@@ -452,7 +482,7 @@ class WhiteBgApp:
         d = filedialog.askdirectory(title="选择输出文件夹", initialdir=str(self.out_dir))
         if d:
             self.out_dir = Path(d)
-            self.out_label.configure(text=str(self.out_dir))
+            self.out_label.configure(text=self._short_path(self.out_dir))
 
     def open_output(self) -> None:
         """打开输出文件夹：三保险并给出可见反馈，绝不静默失败。"""
