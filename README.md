@@ -1,89 +1,96 @@
-# 白底图转换工具（whitebg）
+# whitebg — Batch White-Background Converter
 
-把电商产品实拍图批量转成**白底主图**的本地小工具：`rembg` 负责抠图，本工具补上构图、留白、方图、
-精确尺寸、柔和投影、边缘去色这些"交付级"后处理，图形界面和命令行都能用。
+**English** | [简体中文](README.zh-CN.md)
 
-> 全程本地运行，图片不上传、不联网（首次下载模型除外）。
+Turn batches of e-commerce product photos into **clean white-background main images**, fully offline.
+`rembg` handles the cutout; this tool adds the delivery-grade post-processing that marketplaces actually
+require — subject cropping, consistent padding, square canvas, exact pixel size, soft shadow, and edge
+decontamination. Ships with both a desktop GUI and a CLI.
+
+> Everything runs locally. No uploads, no network calls (except the one-time model download).
 
 ```
-原图（任意背景）  ──▶  抠图  ──▶  裁到主体 + 留白  ──▶  方图/尺寸  ──▶  纯白底 / 透明底  ──▶  1200×1200 JPG
+original (any background)  ──▶  cutout  ──▶  crop to subject + padding  ──▶  square / size  ──▶  white or transparent  ──▶  1200×1200 JPG
 ```
 
 ---
 
-## 截图
+## Screenshots
 
-**主界面** —— 左边是拖拽/选择入口，中间是缩略图墙（可单张移除），底部一键开跑；输出位置与模型都能就地切换。
+**Main window** — drag-and-drop or file picker on the left, thumbnail wall in the middle (remove any single
+image), one-click start at the bottom. Output folder and model can be switched in place.
 
-![主界面](docs/images/ui.png)
+![Main window](docs/images/ui.png)
 
-**转换完成** —— 进度条走满后给出成功/失败张数、耗时和输出目录，可直接点开文件夹取图。
+**Finished** — the progress bar fills, then reports how many succeeded/failed, total time, and the output
+folder, with a button to open it directly.
 
-![转换完成](docs/images/ui-done.png)
+![Finished](docs/images/ui-done.png)
 
-**效果对比** —— 左边是手机随手拍的原图（灰墙背景），右边是输出的 1200×1200 纯白底主图，主体自动居中、四周留白一致。
+**Before / after** — left is a casual phone shot against a grey wall; right is the output 1200×1200 pure
+white main image, subject auto-centred with even padding on all sides.
 
-![前后对比](docs/images/before-after.jpg)
+![Before and after](docs/images/before-after.jpg)
 
-> ▶ 18 秒演示视频（1280×720，无配音）：**[docs/demo.mp4](docs/demo.mp4)**
+> ▶ 18-second demo video (1280×720, silent): **[docs/demo.mp4](docs/demo.mp4)**
 
-## 涵盖的主题（Topics）
+## Topics covered
 
-这个项目横跨"图像处理 → 桌面应用 → 打包分发"三段，主要涉及：
+The project spans three layers — image processing, desktop application, and packaging/distribution:
 
-| 主题 | 在本项目里对应什么 |
+| Topic | What it maps to here |
 |---|---|
-| **背景移除 / 抠图** | `rembg` 会话封装、模型选择与复用、alpha 蒙版后处理 |
-| **电商主图生产** | 裁到主体、统一留白比例、方图、精确 `N×N`、纯白底合成、柔和投影 |
-| **图像后处理** | 边缘去色（前景色反推）、EXIF 方向校正、重采样与画质控制 |
-| **ONNX 推理** | ONNX Runtime 会话管理、多模型切换、线程数控制、离线权重加载 |
-| **桌面 GUI 开发** | Tkinter 自绘控件（圆角卡片/胶囊进度条）、拖拽导入、后台线程 + 事件泵 |
-| **批处理与自动化** | 目录递归、断点续跑（跳过已存在）、`argparse` 命令行、多进程并行 |
-| **Python 工程化** | 包结构设计、延迟导入、`pyproject.toml` 元信息、单元测试与 CI |
-| **应用打包分发** | PyInstaller 文件夹版打包、依赖瘦身、Windows 7 兼容构建与静态体检 |
+| **Background removal / matting** | `rembg` session wrapper, model selection and reuse, alpha mask post-processing |
+| **E-commerce main image production** | Crop to subject, uniform padding ratio, square canvas, exact `N×N`, white compositing, soft shadow |
+| **Image post-processing** | Edge decontamination (foreground colour recovery), EXIF orientation, resampling and quality control |
+| **ONNX inference** | ONNX Runtime session management, multi-model switching, thread count control, offline weights |
+| **Desktop GUI development** | Hand-drawn Tkinter widgets (rounded cards, capsule progress bar), drag-and-drop, worker thread + event pump |
+| **Batch processing & automation** | Recursive directory scan, resumable runs (skip existing), `argparse` CLI, multiprocessing |
+| **Python project engineering** | Package layout, lazy imports, `pyproject.toml` metadata, unit tests and CI |
+| **Packaging & distribution** | PyInstaller one-folder builds, dependency trimming, Windows 7 compatible build with static auditing |
 
-> 想在 GitHub 上被搜到，可以在仓库 **About → Topics** 里贴这几个标签：
-> `rembg`、`background-removal`、`image-processing`、`e-commerce`、`product-photography`、
-> `onnxruntime`、`tkinter`、`desktop-app`、`batch-processing`、`pyinstaller`
+> To make the repo discoverable, paste these into **About → Topics** on GitHub:
+> `rembg`, `background-removal`, `image-processing`, `e-commerce`, `product-photography`,
+> `onnxruntime`, `tkinter`, `desktop-app`, `batch-processing`, `pyinstaller`
 
 ---
 
-## 功能特性
+## Features
 
-- **批量处理**：整个文件夹丢进来，递归扫描、自动跳过已处理、可选多进程
-- **两种入口**：Tkinter 图形界面（拖拽 + 缩略图预览 + 进度条）／命令行（可脚本化、可定时任务）
-- **交付级后处理**：自动裁到主体、统一留白比例、方图、精确 `N×N` 像素、可选柔和投影
-- **边缘去色**：按 alpha 反推前景色，去掉软边残留的背景色（彩边/光晕）
-- **EXIF 方向校正**：手机竖拍图不会横过来
-- **三种模型任选**：`u2net`（最快）／`birefnet-general-lite`（均衡，默认）／`birefnet-general`（最准）
-- **可打包成免安装 exe**：含一份 Windows 7 兼容构建配置（见 [docs/windows7.md](docs/windows7.md)）
+- **Batch processing** — drop in a whole folder; recursive scan, skip already-processed files, optional multiprocessing
+- **Two entry points** — Tkinter GUI (drag-and-drop, thumbnail preview, progress bar) or CLI (scriptable, schedulable)
+- **Delivery-grade post-processing** — auto crop to subject, uniform padding ratio, square canvas, exact `N×N` pixels, optional soft shadow
+- **Edge decontamination** — recovers the foreground colour from alpha, removing background colour bleeding (coloured fringes / halos) on soft edges
+- **EXIF orientation fix** — portrait phone shots no longer come out sideways
+- **Three models to choose from** — `u2net` (fastest) / `birefnet-general-lite` (balanced, default) / `birefnet-general` (most accurate)
+- **Packages into a portable exe** — includes a Windows 7 compatible build config (see [docs/windows7.md](docs/windows7.md))
 
-## 输出长什么样
+## What the output looks like
 
-默认（不加任何参数）就是标准电商主图：**1200×1200 白底 JPG**，主体居中、四周留白 6%、无投影。
-需要别的口味时改参数即可：
+With no arguments you get a standard e-commerce main image: **1200×1200 white JPG**, subject centred,
+6% padding on all sides, no shadow. Change the flags for other tastes:
 
-| 想要 | 加的参数 |
+| You want | Flag to add |
 |---|---|
-| 透明底 PNG（后期自己排版） | `--transparent` |
-| 保持原图宽高比，不做方图 | `--no-square` |
-| 完全统一的 800×800 | `--size 800 --square` |
-| 加一层柔和投影，避免"贴纸感" | `--shadow` |
-| 毛绒 / 毛发 / 蕾丝，边缘要精细 | `--alpha-matting`（明显变慢） |
+| Transparent PNG (for your own layout work) | `--transparent` |
+| Keep the original aspect ratio, no square canvas | `--no-square` |
+| Uniform 800×800 | `--size 800 --square` |
+| A soft drop shadow to avoid the "sticker" look | `--shadow` |
+| Fur / hair / lace that needs fine edges | `--alpha-matting` (noticeably slower) |
 
 ---
 
-## 环境要求
+## Requirements
 
-| 项目 | 要求 |
+| Item | Requirement |
 |---|---|
-| 操作系统 | Windows 10 / 11（64 位）。**Windows 7 请走 [docs/windows7.md](docs/windows7.md)** 的专用构建 |
-| Python | 源码运行需 **3.11+**（`rembg 2.0.85` 的要求） |
-| 内存 | 建议 8GB（大图 + 质量模型峰值约 2.5GB） |
-| 磁盘 | 每个模型 40MB ~ 1GB，按需下载 |
-| 网络 | 仅首次下载模型需要；之后可完全离线 |
+| OS | Windows 10 / 11 (64-bit). **For Windows 7 use the dedicated build in [docs/windows7.md](docs/windows7.md)** |
+| Python | **3.11+** to run from source (required by `rembg 2.0.85`) |
+| RAM | 8GB recommended (large images + quality model peak around 2.5GB) |
+| Disk | 40MB – 1GB per model, downloaded on demand |
+| Network | Only for the initial model download; fully offline afterwards |
 
-## 安装
+## Installation
 
 ```bash
 git clone https://github.com/jimmyXiang123/whitebg.git
@@ -91,156 +98,164 @@ cd whitebg
 
 python -m venv .venv
 .venv\Scripts\activate          # PowerShell / cmd
-# source .venv/bin/activate     # macOS / Linux（未做测试）
+# source .venv/bin/activate     # macOS / Linux (untested)
 
 pip install -r requirements.txt
 ```
 
-> 首次运行时 `rembg` 会自动下载所选模型的权重。想离线部署的话，把权重放到
-> `models/models/<模型名>/<模型名>.onnx` 即可，程序会优先用本地文件（不会联网）。
+> On first run `rembg` downloads the weights for the selected model. For offline deployment, place them at
+> `models/models/<model-name>/<model-name>.onnx` and the program will prefer the local file (no network access).
 
-## 使用方法
+## Usage
 
-### 图形界面
+### GUI
 
 ```bash
 python -m whitebg
 ```
 
-1. 把图片或文件夹**直接拖进窗口**，或点「＋ 添加图片 / 添加文件夹」
-2. 选输出位置和模型（「速度优先」约 2~6 秒/张，「质量优先」约 15~20 秒/张）
-3. 点「开始转换」，完成后点「打开输出文件夹」
+1. **Drag images or a folder straight into the window**, or click "＋ Add images / Add folder"
+2. Pick an output folder and a model ("Speed first" ≈ 2–6 s/image, "Quality first" ≈ 15–20 s/image)
+3. Click "Start", then "Open output folder" when it finishes
 
-首次打开会有 30~60 秒的模型加载等待（后台预热，进度条会显示"正在加载模型"），
-之后每张图都是秒级。
+The first launch takes 30–60 s while the model loads (warm-up happens in the background and the progress bar
+shows "loading model"); every image after that is done in seconds.
 
-### 命令行
+### CLI
 
 ```bash
-# 最常用：整个文件夹 → 1200×1200 白底 JPG
+# Most common: whole folder → 1200×1200 white JPG
 python -m whitebg -i input -o output
 
-# 透明底 PNG，保持原比例
+# Transparent PNG, keep original aspect ratio
 python -m whitebg -i input -o output --transparent --format png --no-square
 
-# 高质量模型 + 投影，先跑 5 张试水
+# High-quality model + shadow, try the first 5 images
 python -m whitebg -i input -o output -m birefnet-general --shadow --limit 5
 ```
 
-### 参数一览
+### Options
 
-| 参数 | 默认 | 说明 |
+| Option | Default | Description |
 |---|---|---|
-| `-i, --input` | `./input` | 输入图片或文件夹 |
-| `-o, --output` | `./output` | 输出目录（自动创建，保留子目录结构） |
-| `-m, --model` | `birefnet-general-lite` | 抠图模型，见下节 |
-| `-r, --recursive` | 关 | 递归子目录 |
-| `--format` | `jpg` | `png` / `jpg` / `jpeg` / `webp`；透明底时默认 png |
-| `--quality` | `95` | JPG / WebP 质量 |
-| `--size` | `1200` | 输出最长边像素，`0` = 不缩放 |
-| `--square` / `--no-square` | 开 | 是否放进正方形画布 |
-| `--upscale` | 关 | 小图也放大填满画布（默认只缩不放，避免发虚） |
-| `--margin` | `0.06` | 主体四周留白比例 |
-| `--inner-margin` | `0.04` | 方图模式额外的内边距 |
-| `--shadow` | 关 | 加柔和投影（需白底，不能与 `--transparent` 同用） |
-| `--transparent` | 关 | 输出透明底，不铺白底 |
-| `--alpha-matting` | 关 | 精细边缘，适合毛发/毛绒/蕾丝，明显变慢 |
-| `--no-decontaminate` | 关 | 关闭边缘去色（默认开启，能去掉彩边） |
-| `--workers` | `1` | 并行进程数（实测单进程反而不抢内存，多数场景 1 最快） |
-| `--threads` | `0` | 每个进程的 ONNX 线程数，`0` = 自动 |
-| `--overwrite` | 关 | 覆盖已存在的输出（默认跳过） |
-| `--limit` | `0` | 只处理前 N 张（试跑用） |
+| `-i, --input` | `./input` | Input image or folder |
+| `-o, --output` | `./output` | Output folder (created automatically, subdirectory structure preserved) |
+| `-m, --model` | `birefnet-general-lite` | Cutout model, see below |
+| `-r, --recursive` | off | Recurse into subdirectories |
+| `--format` | `jpg` | `png` / `jpg` / `jpeg` / `webp`; defaults to png when transparent |
+| `--quality` | `95` | JPG / WebP quality |
+| `--size` | `1200` | Longest output edge in pixels, `0` = no resizing |
+| `--square` / `--no-square` | on | Whether to fit into a square canvas |
+| `--upscale` | off | Enlarge small images to fill the canvas (default only shrinks, to avoid blur) |
+| `--margin` | `0.06` | Padding ratio around the subject |
+| `--inner-margin` | `0.04` | Extra inset in square mode |
+| `--shadow` | off | Add a soft shadow (white background only; cannot combine with `--transparent`) |
+| `--transparent` | off | Transparent background, no white fill |
+| `--alpha-matting` | off | Fine edges for fur / plush / lace; noticeably slower |
+| `--no-decontaminate` | off | Disable edge decontamination (on by default; removes coloured fringes) |
+| `--workers` | `1` | Number of worker processes (measured: a single process avoids memory contention and is usually fastest) |
+| `--threads` | `0` | ONNX threads per process, `0` = auto |
+| `--overwrite` | off | Overwrite existing outputs (skipped by default) |
+| `--limit` | `0` | Process only the first N images (for trial runs) |
 
-## 模型怎么选
+## Choosing a model
 
-| 模型 | 体积 | 速度 | 质量 | 授权 |
+| Model | Size | Speed | Quality | Licence |
 |---|---|---|---|---|
-| `u2net` | 176MB | 最快（约 2~6 秒） | 边缘略硬 | Apache-2.0，可商用 |
-| `birefnet-general-lite` | 224MB | 中（约 15~20 秒） | 细结构稳，**推荐批量首选** | MIT，可商用 |
-| `birefnet-general` | 930MB | 慢 | 最准，复杂场景兜底 | MIT，可商用 |
-| `bria-rmbg` | 176MB | 中 | 质量很高 | **商用需向 BRIA 付费授权** |
-| `isnet-general-use` / `silueta` / `u2netp` | 小 | 快 | 各有短板（实测 isnet 会抠出矩形空洞） | 见各自仓库 |
+| `u2net` | 176MB | Fastest (≈2–6 s) | Slightly hard edges | Apache-2.0, commercial use OK |
+| `birefnet-general-lite` | 224MB | Medium (≈15–20 s) | Stable on fine structures, **recommended default** | MIT, commercial use OK |
+| `birefnet-general` | 930MB | Slow | Most accurate, good fallback for complex scenes | MIT, commercial use OK |
+| `bria-rmbg` | 176MB | Medium | Very high quality | **Commercial use requires a paid BRIA licence** |
+| `isnet-general-use` / `silueta` / `u2netp` | small | Fast | Each has weak spots (isnet measured to punch rectangular holes) | See each upstream repo |
 
-> 实测结论：产品图（规整主体）用 `birefnet-general-lite` 最省心；纯白底小图用 `u2net` 更快。
+> Measured conclusion: for product shots (well-defined subjects) `birefnet-general-lite` is the least
+> troublesome; for small images on a plain background `u2net` is faster.
 
-## 打包成 exe（可选）
+## Building an exe (optional)
 
 ```bash
 pip install -r requirements-build.txt
 pyinstaller --noconfirm --clean --distpath dist --workpath build packaging/gui.spec
-# 产物：dist/白底图转换GUI/ ，整个文件夹拷走即用
+# Output: dist/白底图转换GUI/ — copy the whole folder and it runs
 ```
 
-Windows 7 兼容版需要 Python 3.8 环境，步骤见 [docs/windows7.md](docs/windows7.md)，
-打包后可用 `packaging/scan_win7.py` 做静态体检（是否残留 Win8+ 依赖）。
+The Windows 7 compatible build needs a Python 3.8 environment; see [docs/windows7.md](docs/windows7.md).
+After building, `packaging/scan_win7.py` performs a static audit (checking for leftover Win8+ dependencies).
 
-## 目录结构
+## Project layout
 
 ```
 .
 ├── whitebg/
-│   ├── __init__.py        版本等元信息（不导入重依赖，import 是毫秒级）
-│   ├── engine.py          转换引擎 + 命令行（PIL/rembg 只在函数内按需导入）
-│   ├── gui.py             Tkinter 图形界面
-│   └── __main__.py        python -m whitebg 的统一入口
-├── run_gui.py             GUI 启动器（PyInstaller 打包指向这里）
-├── run_cli.py             命令行启动器
+│   ├── __init__.py        version and metadata (no heavy imports; `import` stays in the millisecond range)
+│   ├── engine.py          conversion engine + CLI (PIL/rembg imported lazily inside functions)
+│   ├── gui.py             Tkinter GUI
+│   └── __main__.py        unified entry point for `python -m whitebg`
+├── run_gui.py             GUI launcher (PyInstaller points here)
+├── run_cli.py             CLI launcher
 ├── packaging/
-│   ├── gui.spec           Win10/11 打包配置
-│   ├── gui_win7.spec      Win7 兼容打包配置
-│   └── scan_win7.py       Win7 兼容性静态体检
-├── tests/                 单元测试（不需要模型，CI 可跑）
+│   ├── gui.spec           Win10/11 build config
+│   ├── gui_win7.spec      Win7 compatible build config
+│   └── scan_win7.py       Win7 compatibility static audit
+├── tests/                 unit tests (no model needed, runs in CI)
 ├── docs/
-│   ├── windows7.md        Win7 兼容版：依赖天花板、环境要求、验证记录
-│   └── build.md           打包详解
-├── requirements.txt       运行时依赖
-├── requirements-win7.txt  Win7 构建的版本锁定
-└── pyproject.toml         包元信息 / 入口脚本 / ruff 配置
+│   ├── windows7.md        Win7 build: dependency ceilings, requirements, verification log
+│   └── build.md           packaging in depth
+├── requirements.txt       runtime dependencies
+├── requirements-win7.txt  pinned versions for the Win7 build
+├── README.md              this file (English)
+├── README.zh-CN.md        简体中文版
+└── pyproject.toml         package metadata / entry points / ruff config
 ```
 
-`models/`、`input/`、`output/` 属于运行时数据，已在 `.gitignore` 里排除。
+`models/`, `input/` and `output/` are runtime data and are excluded via `.gitignore`.
 
-## 常见问题
+## FAQ
 
-**Q：输出 1200×1200 里主体偏小？**
-默认"只缩不放"：小于画布的原图不会被强行放大（放大只会发虚）。加 `--upscale`，或直接用大尺寸原图。
+**Q: The subject looks small inside the 1200×1200 canvas.**
+By default the tool only shrinks, never enlarges: an original smaller than the canvas is not upscaled
+(upscaling only blurs it). Add `--upscale`, or start with larger source images.
 
-**Q：边缘有彩色描边 / 光晕？**
-原图背景色渗进了边缘（绿幕、蓝墙常见）。默认已开启去色污染；确认没有加 `--no-decontaminate`。
+**Q: There is a coloured fringe / halo around the edges.**
+The background colour bled into the edges (common with green screens and blue walls). Decontamination is on
+by default; make sure you have not added `--no-decontaminate`.
 
-**Q：某张图抠坏了（空洞 / 糊成一片 / 多块残留）？**
-模型各有短板。先换 `birefnet-general-lite` 或 `birefnet-general`，多数能解决；
-毛发类再加 `--alpha-matting`。
+**Q: A particular image came out badly (holes / smeared / leftover fragments).**
+Every model has weak spots. Try `birefnet-general-lite` or `birefnet-general` first — that solves most cases.
+For hair and fur add `--alpha-matting`.
 
-**Q：`python -m whitebg` 打不开窗口？**
-需要带 Tk 的 Python（python.org 官方安装包默认带上；conda 也带）。Linux 上要另装 `python3-tk`。
+**Q: `python -m whitebg` does not open a window.**
+You need a Python build that includes Tk (the official python.org installer bundles it; conda does too).
+On Linux install `python3-tk` separately.
 
-**Q：首次运行卡在"正在加载模型"？**
-在下载权重，或是在做 JIT 编译，属正常现象。离线环境请预先把模型放到 `models/`。
+**Q: The first run hangs on "loading model".**
+It is downloading weights, or compiling JIT code — this is normal. For offline environments, place the models
+in `models/` beforehand.
 
-**Q：为什么没有做成单文件 exe？**
-单文件每次启动都要把上百 MB 解压到临时目录，老机器上又慢又容易被杀软拦。
-文件夹版启动更快、更稳定，整个目录拷走一样能用。
+**Q: Why not a single-file exe?**
+A single-file build unpacks hundreds of MB into a temp folder on every launch — slow on older machines and
+frequently blocked by antivirus. The one-folder build starts faster, is more stable, and is equally portable.
 
-## 开发
+## Development
 
 ```bash
-pip install -e . --no-deps       # 只装本包，跑测试不需要 rembg
+pip install -e . --no-deps       # install just this package; tests do not need rembg
 python -m unittest discover -s tests -v
-ruff check .                     # 可选，风格检查
+ruff check .                     # optional, style check
 ```
 
-CI（`.github/workflows/ci.yml`）在 Windows 上跑 Python 3.11 / 3.12 / 3.13 的单元测试，
-不下载模型，几十秒出结果。
+CI (`.github/workflows/ci.yml`) runs the unit tests on Windows with Python 3.11 / 3.12 / 3.13.
+No model downloads, results in under a minute.
 
-## 许可证
+## Licence
 
-本项目代码采用 [MIT License](LICENSE)。
-内置/依赖的第三方组件（rembg、ONNX Runtime、U-2-Net、BiRefNet、PyMatting、OpenCV、PyInstaller 等）
-各自的许可证与商用注意事项见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+Project code is released under the [MIT License](LICENSE).
+The bundled and dependent third-party components (rembg, ONNX Runtime, U-2-Net, BiRefNet, PyMatting, OpenCV,
+PyInstaller and others) each carry their own licence and commercial-use conditions — see
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
-## 致谢
+## Acknowledgements
 
-- [rembg](https://github.com/danielgatis/rembg) —— 抠图能力的地基
-- [U-2-Net](https://github.com/xuebinqin/U-2-Net)、[BiRefNet](https://github.com/ZhengPeng7/BiRefNet) —— 模型
-- [ONNX Runtime](https://github.com/microsoft/onnxruntime) —— 推理引擎
+- [rembg](https://github.com/danielgatis/rembg) — the foundation of the cutout capability
+- [U-2-Net](https://github.com/xuebinqin/U-2-Net), [BiRefNet](https://github.com/ZhengPeng7/BiRefNet) — models
+- [ONNX Runtime](https://github.com/microsoft/onnxruntime) — inference engine

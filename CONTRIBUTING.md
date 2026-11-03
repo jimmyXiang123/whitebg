@@ -29,10 +29,14 @@ python -m unittest discover -s tests -v
 
 | 改了什么 | 顺手更新 |
 |---|---|
-| 新增命令行参数 | `engine.build_parser()` + README 的参数表 + `tests/test_engine.py` |
-| 新增模型 | `MODEL_NOTES` + README 的模型表 + GUI 的 `MODELS` 列表 |
+| 新增命令行参数 | `engine.build_parser()` + **两份 README** 的参数表 + `tests/test_engine.py` |
+| 新增模型 | `MODEL_NOTES` + **两份 README** 的模型表 + GUI 的 `MODELS` 列表 |
 | 调整依赖 | `requirements.txt` 与 `pyproject.toml` 的 `dependencies` 保持一致 |
 | 影响打包 | `packaging/*.spec`，并实测一次 `pyinstaller` |
+
+> **两份 README 必须同步**：`README.md` 是英文版（GitHub 默认展示、也是 `pyproject.toml` 的 readme），
+> `README.zh-CN.md` 是中文版。改功能、改参数、改截图时两边都要动，否则切换语言后会看到过期内容。
+> 两份的章节顺序刻意保持一致，方便对照着改。
 
 ## 四、提交
 

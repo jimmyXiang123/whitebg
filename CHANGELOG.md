@@ -27,8 +27,11 @@
 
 ### 文档
 
+- **README 拆分为中英双语**：`README.md` 为英文版（GitHub 默认展示，也是 `pyproject.toml` 的 readme），
+  `README.zh-CN.md` 为中文版，两份顶部各有语言切换入口
 - README 新增「截图」章节（主界面 / 完成态 / 前后对比）与「涵盖的主题（Topics）」
 - 新增 18 秒演示视频 `docs/demo.mp4`
+- `CONTRIBUTING.md` 补充「两份 README 必须同步」的约定
 
 ### 移除
 
