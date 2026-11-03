@@ -1,0 +1,25 @@
+# Windows 7 兼容版的依赖锁定（需要 Python 3.8.20）
+#
+# 这些版本不是"随便挑的"，每一项都卡在支持 Win7 的天花板上：
+#   * onnxruntime 1.15.0 起正式放弃 Win7，1.14.1 是最后一个可用版本
+#   * rembg 2.0.61 是 Python 3.8 能装的最高版（更高版本要求 Python 3.9+）
+#   * numpy 1.24.4 是最后一个支持 Python 3.8 的版本
+#   * PyInstaller 5.13.2 的 bootloader 仍以 Win7 为目标平台（6.x 已放弃）
+#
+# 安装命令（详见 docs/windows7.md）：
+#   py -3.8 -m venv .venv38
+#   .venv38\Scripts\python -m pip install -r requirements-win7.txt
+
+numpy==1.24.4
+Pillow==9.5.0
+scipy==1.10.1
+PyMatting==1.1.12
+numba==0.58.1
+rembg==2.0.61
+onnxruntime==1.14.1
+opencv-python-headless==4.5.5.64
+pooch==1.7.0
+tqdm==4.66.4
+jsonschema==4.17.3
+tkinterdnd2==0.3.0
+pyinstaller==5.13.2

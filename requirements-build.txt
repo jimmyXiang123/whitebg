@@ -1,0 +1,11 @@
+# 打包 exe 需要的额外依赖（运行时依赖见 requirements.txt）
+#
+#   python -m pip install -r requirements-build.txt
+#   pyinstaller --noconfirm --clean packaging/gui.spec
+#
+# 注意：打 Windows 7 兼容版必须用 Python 3.8 + PyInstaller 5.13.2，
+#       见 requirements-win7.txt 与 docs/windows7.md。
+
+-r requirements.txt
+
+pyinstaller>=6.0

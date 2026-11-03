@@ -1,0 +1,45 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+.eggs/
+build/
+dist/
+pip-wheel-metadata/
+
+# ---- 虚拟环境 ----
+.venv/
+.venv38/
+venv/
+env/
+
+# ---- 本项目的数据目录（体积大 / 属于用户内容，不进仓库）----
+models/
+input/
+output/
+启动日志.txt
+
+# ---- 打包产物（spec 保留，产物不保留）----
+build_win7/
+dist_win7/
+
+# ---- 测试与工具缓存 ----
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# ---- 日志与临时文件 ----
+*.log
+*.tmp
+~$*
+
+# ---- 编辑器 / 系统 ----
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini

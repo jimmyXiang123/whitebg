@@ -1,0 +1,11 @@
+# 运行时依赖（Python 3.11 及以上）
+#
+# 只列直接 import 的包；rembg 自己的间接依赖（scipy / pooch / tqdm / opencv 等）
+# 由 pip 自动解析，无需在这里重复声明，避免版本锁死。
+
+numpy>=1.24
+Pillow>=10.0
+PyMatting>=1.1.12
+rembg>=2.0.60,<3
+onnxruntime>=1.17
+tkinterdnd2>=0.3.0
