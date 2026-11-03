@@ -41,9 +41,9 @@ whitebg = "whitebg.engine:launch"
 whitebg-gui = "whitebg.gui:launch"
 
 [project.urls]
-Documentation = "https://github.com/jimmyXiang123/-whitebg-#readme"
-Repository = "https://github.com/jimmyXiang123/-whitebg-"
-Issues = "https://github.com/jimmyXiang123/-whitebg-/issues"
+Documentation = "https://github.com/jimmyXiang123/whitebg#readme"
+Repository = "https://github.com/jimmyXiang123/whitebg"
+Issues = "https://github.com/jimmyXiang123/whitebg/issues"
 
 [tool.setuptools]
 packages = ["whitebg"]
