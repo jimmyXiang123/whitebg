@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: 单元测试（Python ${{ matrix.python }}）
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      # 只装本包、不装运行时依赖：测试只覆盖包结构与参数解析，
+      # 这样可以避免每次 CI 都下载几百 MB 的 onnxruntime。
+      - name: 安装本包（不含依赖）
+        run: python -m pip install -e . --no-deps
+
+      - name: 运行单元测试
+        run: python -m unittest discover -s tests -v
+
+      - name: 检查 CLI 入口可执行
+        run: |
+          python -m whitebg --help
+          python run_cli.py --help
