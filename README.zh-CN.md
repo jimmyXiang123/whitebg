@@ -184,6 +184,7 @@ Windows 7 兼容版需要 Python 3.8 环境，步骤见 [docs/windows7.md](docs/
 │   ├── __init__.py        版本等元信息（不导入重依赖，import 是毫秒级）
 │   ├── engine.py          转换引擎 + 命令行（PIL/rembg 只在函数内按需导入）
 │   ├── gui.py             Tkinter 图形界面
+│   ├── theme.py           设计令牌：配色 / 字号 / 间距 / 断点
 │   └── __main__.py        python -m whitebg 的统一入口
 ├── run_gui.py             GUI 启动器（PyInstaller 打包指向这里）
 ├── run_cli.py             命令行启动器
@@ -194,6 +195,7 @@ Windows 7 兼容版需要 Python 3.8 环境，步骤见 [docs/windows7.md](docs/
 ├── tests/                 单元测试（不需要模型，CI 可跑）
 ├── docs/
 │   ├── windows7.md        Win7 兼容版：依赖天花板、环境要求、验证记录
+│   ├── ui.md              设计令牌、对比度、组件变体与断点
 │   └── build.md           打包详解
 ├── requirements.txt       运行时依赖
 ├── requirements-win7.txt  Win7 构建的版本锁定

@@ -31,6 +31,7 @@ python -m unittest discover -s tests -v
 |---|---|
 | 新增命令行参数 | `engine.build_parser()` + **两份 README** 的参数表 + `tests/test_engine.py` |
 | 新增模型 | `MODEL_NOTES` + **两份 README** 的模型表 + GUI 的 `MODELS` 列表 |
+| 调整配色 / 间距 / 字号 | 只改 `whitebg/theme.py`，并复核 `docs/ui.md` 的对比度表 |
 | 调整依赖 | `requirements.txt` 与 `pyproject.toml` 的 `dependencies` 保持一致 |
 | 影响打包 | `packaging/*.spec`，并实测一次 `pyinstaller` |
 

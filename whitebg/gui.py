@@ -22,7 +22,7 @@ import time
 import traceback as _tb
 from pathlib import Path
 
-from . import engine
+from . import engine, theme
 
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
@@ -33,11 +33,11 @@ try:
 except Exception:  # noqa: BLE001
     HAVE_DND = False
 
-from PIL import Image, ImageDraw, ImageTk
+from PIL import Image, ImageDraw, ImageOps, ImageTk
 
 APP_TITLE = "白底图转换工具"
-THUMB = 104
-COLS = 6
+THUMB = theme.THUMB
+COLS = 6  # 兜底列数；实际列数由窗口宽度算出（见 _cols_for）
 # 默认“速度优先”模型（约 2 秒/张），可一键切“质量优先”
 MODELS = ["u2net", "birefnet-general-lite", "birefnet-general"]
 SPEED_MODEL = "u2net"
@@ -45,28 +45,25 @@ QUALITY_MODEL = "birefnet-general-lite"
 SMOKE = os.environ.get("GUI_SMOKE") == "1"
 
 # ---------------------------------------------------------------------------
-# iOS 风格调色板（原生渲染，无需联网素材）
+# 颜色取自 theme 令牌（唯一来源），这里保留短别名供历史代码引用
 # ---------------------------------------------------------------------------
-COL_BG = "#F2F2F7"
-COL_CARD = "#FFFFFF"
-COL_TEXT = "#1C1C1E"
-COL_SUB = "#8E8E93"
-COL_ACCENT = "#007AFF"
-COL_ACCENT_DARK = "#0063D6"
-COL_HOVER = "#EDF3FF"
-COL_TRACK = "#E9E9EB"
-COL_DANGER = "#FF3B30"
-COL_OK = "#34C759"
-COL_HINT = "#B0B0B8"
-RADIUS = 16
-CARD_PAD = 16
-WIN_W = 980
-WIN_H = 760
-BTN_W = WIN_W - 2 * 24 - 2 * CARD_PAD  # 卡片内主按钮宽度
+COL_BG = theme.BG
+COL_CARD = theme.SURFACE
+COL_TEXT = theme.INK
+COL_SUB = theme.INK_MUTE     # 旧值 #8E8E93 只有 3.4:1，已换成过 AA 的 #6E757F
+COL_ACCENT = theme.BRAND
+COL_ACCENT_DARK = theme.BRAND_HOVER
+COL_HOVER = theme.BRAND_SOFT
+COL_TRACK = theme.SURFACE_ALT
+COL_DANGER = theme.DANGER
+COL_OK = theme.SUCCESS
+COL_HINT = theme.INK_MUTE
+RADIUS = theme.R_CARD
+CARD_PAD = theme.CARD_PAD
+WIN_W = theme.WIN_W
+WIN_H = theme.WIN_H
 
-
-def F(size: int, bold: bool = False):
-    return ("Segoe UI", size, "bold" if bold else "normal")
+F = theme.font
 
 
 def round_rect_pts(x1, y1, x2, y2, r):
@@ -75,18 +72,20 @@ def round_rect_pts(x1, y1, x2, y2, r):
 
 
 class RoundedFrame(tk.Canvas):
-    """白色圆角卡片，内容放 inner 子框架里。
+    """圆角卡片：两层极浅投影 + 1px 描边，内容放在 ``inner`` 里。
 
-    ``autosize=True``（默认）时卡片高度跟随内容——Canvas 默认会"请求" 265px，
+    ``autosize=True``（默认）高度跟随内容——Canvas 默认会"请求" 265px，
     三张卡片各占 265 就会把最后一张（含完成面板）顶出窗口；
-    预览区这种需要撑满剩余空间的卡片则传 ``autosize=False`` + 一个较小的初值。
+    预览区这类需要撑满剩余空间的卡片传 ``autosize=False``，此时 inner 也会被
+    撑到卡片高度（否则内容只占顶部一条，下面留一片空白）。
     """
 
     def __init__(self, master, radius=RADIUS, bg=COL_CARD, pad=CARD_PAD,
-                 autosize=True, height=1, **kw):
+                 autosize=True, height=1, border=True, **kw):
         super().__init__(master, bg=COL_BG, highlightthickness=0, bd=0, height=height, **kw)
         self._radius, self._fill, self._pad = radius, bg, pad
         self._autosize = autosize
+        self._border = border
         self.inner = tk.Frame(self, bg=bg)
         self._win = self.create_window(pad, pad, anchor="nw", window=self.inner)
         self.bind("<Configure>", self._redraw)
@@ -103,97 +102,177 @@ class RoundedFrame(tk.Canvas):
         if target > 1 and target != int(self.cget("height")):
             self.configure(height=target)
 
+    def _card_poly(self, x1, y1, x2, y2, fill, outline="") -> None:
+        try:
+            # 个别显卡/Tk 版本对 smooth 多边形渲染异常，兜底用普通矩形
+            self.create_polygon(round_rect_pts(x1, y1, x2, y2, self._radius),
+                                smooth=True, fill=fill, outline=outline, tags="card")
+        except tk.TclError:
+            self.create_rectangle(x1, y1, x2, y2, fill=fill, outline=outline, tags="card")
+
     def _redraw(self, _e=None):
         w, h = self.winfo_width(), self.winfo_height()
         if w < 20 or h < 20:
             return
         self.delete("card")
-        try:
-            # 个别显卡/Tk 版本对 smooth 多边形渲染异常，兜底用普通矩形
-            self.create_polygon(round_rect_pts(2, 2, w - 2, h - 2, self._radius),
-                                smooth=True, fill=self._fill, outline="", tags="card")
-        except tk.TclError:
-            self.create_rectangle(2, 2, w - 2, h - 2, fill=self._fill,
-                                  outline="", tags="card")
+        # 先画两层投影（只有下缘露出来），再盖卡片本体
+        self._card_poly(2, 4, w - 1, h - 1, theme.SHADOW_2)
+        self._card_poly(2, 3, w - 1, h - 2, theme.SHADOW_1)
+        self._card_poly(2, 2, w - 2, h - 2, self._fill,
+                        outline=theme.BORDER if self._border else "")
         self.coords(self._win, self._pad, self._pad)
         try:
-            self.itemconfigure(self._win, width=w - 2 * self._pad)
+            self.itemconfigure(self._win, width=max(1, w - 2 * self._pad))
+            if not self._autosize:
+                self.itemconfigure(self._win, height=max(1, h - 2 * self._pad))
         except tk.TclError:
             pass
 
 
-class iOSButton(tk.Frame):
-    """原生 tk.Button 封装（固定像素尺寸 + 扁平配色）。
-    改用系统原生控件渲染：任何机器上都不会出现黑块/颜色缺失，
-    悬停、按下、禁用等交互全部由系统保证。"""
+# 按钮变体：一个页面只有一种主色，其余靠底色/描边分层
+BUTTON_VARIANTS = {
+    "primary": dict(bg=theme.BRAND, fg="#FFFFFF", hover=theme.BRAND_HOVER,
+                    bold=True, ring=False),
+    "tonal": dict(bg=theme.BRAND_SOFT, fg=theme.BRAND_INK, hover=theme.BRAND_SOFT_HOVER,
+                  bold=True, ring=False),
+    "secondary": dict(bg=theme.SURFACE, fg=theme.INK, hover=theme.SURFACE_ALT,
+                      bold=False, ring=True),
+    "ghost": dict(bg=None, fg=theme.INK_SUB, hover=theme.SURFACE_ALT,
+                  bold=False, ring=False),
+    "danger": dict(bg=None, fg=theme.DANGER, hover=theme.DANGER_SOFT,
+                   bold=False, ring=False),
+}
+BTN_SIZES = {
+    "sm": (theme.F_LABEL, 12, 5),
+    "md": (theme.F_BODY, 16, 7),
+    "lg": (theme.F_CTA, 18, 12),
+}
 
-    def __init__(self, master, text, command=None, accent=True, width=120, height=40,
-                 font_size=11, bold=False, bg=None, fg=None):
-        super().__init__(master, width=width, height=height, bg=COL_BG)
-        self.pack_propagate(False)
-        self._accent = accent
-        self._fg = fg or ("#FFFFFF" if accent else COL_TEXT)
-        self._bg = bg or (COL_ACCENT if accent else COL_CARD)
-        self._bg_hover = "#CFE4FF" if bg else (COL_ACCENT_DARK if accent else COL_HOVER)
-        self._bg_disabled = COL_TRACK
-        border = "#B8C4D6" if accent else "#D1D1D6"
-        self.btn = tk.Button(
-            self, text=text, command=command, font=F(font_size, bold),
-            bg=self._bg, fg=self._fg,
-            activebackground=self._bg_hover, activeforeground=self._fg,
-            relief="flat", bd=0, cursor="hand2", padx=8, pady=4,
-            highlightthickness=1, highlightbackground=border, highlightcolor=COL_ACCENT)
-        self.btn.pack(fill=tk.BOTH, expand=True)
 
-    def set_enabled(self, enabled: bool):
-        self.btn.configure(state="normal" if enabled else "disabled",
-                           bg=self._bg if enabled else self._bg_disabled,
-                           fg=self._fg if enabled else COL_SUB)
+class Button(tk.Button):
+    """统一按钮：变体 + 尺寸 + 悬停/禁用状态。
+
+    仍然用原生 tk.Button 渲染（不画 Canvas）：早期在部分显卡/老 Tk 上自绘按钮
+    会出黑块，原生控件最稳。圆角拿不到，就用统一的边框、内边距和配色来建立
+    系统感——视觉一致性靠"节奏"而不是靠描边特效。
+    """
+
+    def __init__(self, master, text, command=None, variant="secondary", size="md",
+                 bold=None, **kw):
+        spec = BUTTON_VARIANTS[variant]
+        try:
+            parent_bg = master.cget("bg")
+        except Exception:  # noqa: BLE001  ttk 控件没有 bg
+            parent_bg = theme.SURFACE
+        base_bg = spec["bg"] or parent_bg
+        fsize, padx, pady = BTN_SIZES.get(size, BTN_SIZES["md"])
+        super().__init__(
+            master, text=text, command=command,
+            font=theme.font(fsize, spec["bold"] if bold is None else bold),
+            bg=base_bg, fg=spec["fg"],
+            activebackground=spec["hover"], activeforeground=spec["fg"],
+            relief="flat", bd=0, cursor="hand2", takefocus=True,
+            padx=padx, pady=pady,
+            highlightthickness=1 if spec["ring"] else 0,
+            highlightbackground=theme.BORDER_STRONG if spec["ring"] else base_bg,
+            highlightcolor=theme.BRAND,
+            **kw)
+        self._spec = spec
+        self._base_bg = base_bg
+        self._enabled = True
+        self.bind("<Enter>", self._on_enter, add="+")
+        self.bind("<Leave>", self._on_leave, add="+")
+
+    def _on_enter(self, _e=None):
+        if self._enabled:
+            self.configure(bg=self._spec["hover"])
+
+    def _on_leave(self, _e=None):
+        if self._enabled:
+            self.configure(bg=self._base_bg)
+
+    def set_enabled(self, enabled: bool) -> None:
+        self._enabled = enabled
+        if enabled:
+            self.configure(state="normal", bg=self._base_bg, fg=self._spec["fg"],
+                           cursor="hand2")
+        else:
+            self.configure(state="disabled", bg=theme.SURFACE_ALT,
+                           fg=theme.INK_DISABLED, cursor="arrow")
+
+    def set_variant(self, variant: str) -> None:
+        """切换变体（用于「速度优先 / 质量优先」这类互斥选项的选中态）。"""
+        spec = BUTTON_VARIANTS[variant]
+        try:
+            parent_bg = self.master.cget("bg")
+        except Exception:  # noqa: BLE001
+            parent_bg = theme.SURFACE
+        self._spec = spec
+        self._base_bg = spec["bg"] or parent_bg
+        self.configure(bg=self._base_bg, fg=spec["fg"],
+                       activebackground=spec["hover"],
+                       highlightthickness=1 if spec["ring"] else 0,
+                       highlightbackground=(theme.BORDER_STRONG if spec["ring"]
+                                            else self._base_bg))
+
+
+# 兼容旧名字（打包脚本/外部代码可能引用过 iOSButton）
+iOSButton = Button
 
 
 class RoundedProgress(tk.Canvas):
-    """胶囊进度条。"""
+    """胶囊进度条，宽度跟随容器。"""
 
-    def __init__(self, master, width=330, height=10, radius=5):
-        super().__init__(master, width=width, height=height + 4, bg=COL_CARD,
+    def __init__(self, master, height=8, radius=4):
+        super().__init__(master, height=height, bg=COL_CARD,
                          highlightthickness=0, bd=0)
-        self._pw, self._ph, self._pr = width, height + 4, radius
+        self._ph, self._pr = height, radius
         self._frac = 0.0
+        self.bind("<Configure>", lambda e: self._draw())
         self._draw()
 
-    def _draw(self):
-        self.delete("all")
+    def _bar(self, x1, x2, fill):
+        if x2 - x1 < 1:
+            return
+        r = min(self._pr, (x2 - x1) / 2, self._ph / 2)
         try:
-            self.create_polygon(round_rect_pts(2, 2, self._pw - 2, self._ph - 2, self._pr),
-                                smooth=True, fill=COL_TRACK)
-            fw = (self._pw - 6) * self._frac
-            if fw >= self._pr * 2:
-                self.create_polygon(round_rect_pts(3, 3, 3 + fw, self._ph - 3, self._pr),
-                                    smooth=True, fill=COL_ACCENT)
-            elif fw > 2:
-                self.create_polygon(round_rect_pts(3, 3, 3 + fw, self._ph - 3, fw / 2),
-                                    smooth=True, fill=COL_ACCENT)
+            self.create_polygon(round_rect_pts(x1, 0, x2, self._ph, r),
+                                smooth=True, fill=fill)
         except tk.TclError:  # 渲染兼容性兜底
-            fw = (self._pw - 6) * self._frac
-            self.create_rectangle(2, 2, self._pw - 2, self._ph - 2, fill=COL_TRACK)
-            if fw > 2:
-                self.create_rectangle(3, 3, 3 + fw, self._ph - 3, fill=COL_ACCENT)
+            self.create_rectangle(x1, 0, x2, self._ph, fill=fill)
+
+    def _draw(self):
+        w = self.winfo_width()
+        if w < 10:
+            w = 320  # 首次布局前给个占位宽度
+        self.delete("all")
+        self._bar(0, w, theme.BORDER_STRONG)  # 轨道要看得见，否则空进度像一条毛边
+        fw = w * self._frac
+        if fw > 1:
+            self._bar(0, fw, COL_ACCENT)
 
     def set(self, frac: float):
         self._frac = max(0.0, min(1.0, frac))
         self._draw()
 
 
-def load_thumb(path: Path, size: int = THUMB, radius: int = 14) -> Image.Image:
-    """后台线程用：只做纯 PIL 处理（不碰 Tk），返回圆角 RGBA 图。"""
-    im = Image.open(path).convert("RGBA")
-    im.thumbnail((size, size), Image.LANCZOS)
-    canvas = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    canvas.paste(im, ((size - im.width) // 2, (size - im.height) // 2), im)
+def load_thumb(path: Path, size: int = THUMB, radius: int = theme.R_THUMB) -> Image.Image:
+    """后台线程用：只做纯 PIL 处理（不碰 Tk），返回圆角方图。
+
+    两点讲究：
+    * 不做"完整放进方框"（会留白边，每格宽窄不一），改成居中裁切填满，
+      一排缩略图才有整齐的节奏；
+    * 不能直接给 RGBA —— Tk 不做 alpha 混合，透明像素会显示成黑块（缩略图
+      四边那种"黑框"就是这么来的）。铺白底后再按圆角遮罩裁切。
+    """
+    im = Image.open(path).convert("RGB")
+    im = ImageOps.fit(im, (size, size), Image.LANCZOS, centering=(0.5, 0.5))
     mask = Image.new("L", (size, size), 0)
-    ImageDraw.Draw(mask).rounded_rectangle([0, 0, size - 1, size - 1], radius=radius, fill=255)
-    canvas.putalpha(mask)
-    return canvas
+    ImageDraw.Draw(mask).rounded_rectangle([0, 0, size - 1, size - 1],
+                                           radius=radius, fill=255)
+    out = Image.new("RGB", (size, size), (255, 255, 255))
+    out.paste(im, (0, 0), mask)
+    return out
 
 
 def _thumb_to_photo(im: Image.Image | None) -> ImageTk.PhotoImage | None:
@@ -253,137 +332,333 @@ class WhiteBgApp:
         text = str(path)
         return text if len(text) <= limit else "…" + text[-(limit - 1):]
 
-    def _btn(self, parent, text, command, accent=True, width=120, height=40,
-             font_size=11, bold=False, bg=None, fg=None):
-        b = iOSButton(parent, text, command=command, accent=accent, width=width,
-                      height=height, font_size=font_size, bold=bold, bg=bg, fg=fg)
+    def _btn(self, parent, text, command=None, variant="secondary", size="md",
+             bold=None, **kw):
+        b = Button(parent, text, command=command, variant=variant, size=size,
+                   bold=bold, **kw)
         self._buttons.append(b)
         return b
 
     # ------------------------------------------------------------------ UI
     def _build_ui(self) -> None:
-        self.root.configure(bg=COL_BG)
+        self.root.configure(bg=theme.BG)
         self.root.title(APP_TITLE)
         self.root.geometry(f"{WIN_W}x{WIN_H}")
-        self.root.minsize(900, 640)
+        self.root.minsize(theme.WIN_MIN_W, theme.WIN_MIN_H)
         if not SMOKE:
             self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
-        outer = tk.Frame(self.root, bg=COL_BG)
-        outer.pack(fill=tk.BOTH, expand=True, padx=24, pady=(18, 20))
+        self._compact = False
+        self._cols = COLS
 
-        # 头部
-        head = tk.Frame(outer, bg=COL_BG)
-        head.pack(fill=tk.X, pady=(0, 14))
-        tk.Label(head, text="白底图转换", bg=COL_BG, fg=COL_TEXT,
-                 font=F(24, True)).pack(anchor="w")
-        tk.Label(head, text="批量抠图 · 白底电商主图 · 全本地运行",
-                 bg=COL_BG, fg=COL_SUB, font=F(11)).pack(anchor="w", pady=(2, 0))
+        self.outer = tk.Frame(self.root, bg=theme.BG)
+        self.outer.pack(fill=tk.BOTH, expand=True,
+                        padx=theme.GUTTER, pady=(theme.S5, theme.S6))
 
-        # 卡片1：素材操作
-        card1 = RoundedFrame(outer)
+        # ── 顶部：标题 + 全局操作 ───────────────────────────────────
+        head = tk.Frame(self.outer, bg=theme.BG)
+        head.pack(fill=tk.X, pady=(0, theme.S4))
+        self._btn(head, "打开输出文件夹", self.open_output,
+                  variant="secondary", size="sm").pack(side=tk.RIGHT, pady=(theme.S1, 0))
+
+        titles = tk.Frame(head, bg=theme.BG)
+        titles.pack(side=tk.LEFT, anchor="w")
+        tk.Label(titles, text=APP_TITLE, bg=theme.BG, fg=theme.INK,
+                 font=F(theme.F_TITLE, True)).pack(anchor="w")
+        self.subtitle = tk.Label(titles, text="批量抠图 · 白底电商主图 · 全程本地运行",
+                                 bg=theme.BG, fg=theme.INK_MUTE, font=F(theme.F_LABEL))
+        self.subtitle.pack(anchor="w", pady=(theme.S1, 0))
+
+        # ── 卡片 1：素材 ────────────────────────────────────────────
+        card1 = RoundedFrame(self.outer)
         card1.pack(fill=tk.X)
         c1 = card1.inner
-        row1 = tk.Frame(c1, bg=COL_CARD)
+
+        row1 = tk.Frame(c1, bg=theme.SURFACE)
         row1.pack(fill=tk.X)
-        self._btn(row1, "＋ 添加图片", self.add_files, accent=False, width=120).pack(side=tk.LEFT)
-        self._btn(row1, "添加文件夹", self.add_folder, accent=False, width=120).pack(side=tk.LEFT, padx=(10, 0))
-        self._btn(row1, "清空", self.clear_all, accent=False, width=72).pack(side=tk.LEFT, padx=(10, 0))
-        # 常驻「打开输出文件夹」按钮：浅蓝底蓝字，与白色按钮明显区分
-        self._btn(row1, "打开输出文件夹", self.open_output, accent=False, width=150,
-                  height=34, font_size=10, bg=COL_HOVER, fg=COL_ACCENT,
-                  ).pack(side=tk.RIGHT, padx=(0, 12))
-        self.count_label = tk.Label(row1, text="已选 0 张图片", bg=COL_CARD, fg=COL_SUB, font=F(11))
+        # 「添加图片」用 tonal：比相邻按钮更醒目，但不与底部主按钮争第一焦点
+        self._btn(row1, "＋ 添加图片", self.add_files, variant="tonal").pack(side=tk.LEFT)
+        self._btn(row1, "添加文件夹", self.add_folder,
+                  variant="secondary").pack(side=tk.LEFT, padx=(theme.S2, 0))
+        self._btn(row1, "清空", self.clear_all,
+                  variant="ghost").pack(side=tk.LEFT, padx=(theme.S1, 0))
+        self.count_label = tk.Label(row1, text="已选 0 张图片", bg=theme.SURFACE,
+                                    fg=theme.INK_MUTE, font=F(theme.F_LABEL))
         self.count_label.pack(side=tk.RIGHT)
 
-        row2 = tk.Frame(c1, bg=COL_CARD)
-        row2.pack(fill=tk.X, pady=(14, 0))
-        tk.Label(row2, text="输出位置", bg=COL_CARD, fg=COL_SUB, font=F(10)).pack(side=tk.LEFT)
-        # 路径按字符数限制宽度并锚定左侧：路径很长时只显示尾段，
-        # 否则会把右侧的「模型 / 速度优先 / 质量优先」整排挤出窗口。
-        self.out_label = tk.Label(row2, text=self._short_path(self.out_dir), bg=COL_CARD,
-                                  fg=COL_TEXT, font=F(11), width=44, anchor="w")
-        self.out_label.pack(side=tk.LEFT, padx=(8, 0))
-        self._btn(row2, "更改…", self.choose_output, accent=False, width=76,
-                  height=30, font_size=10).pack(side=tk.LEFT, padx=(8, 0))
+        tk.Frame(c1, bg=theme.BORDER, height=1).pack(fill=tk.X, pady=theme.S3)
+
+        # 输出位置 + 模型：宽屏排一行，窄屏折成两行（见 _layout_toolbar）
+        self.toolbar = tk.Frame(c1, bg=theme.SURFACE)
+        self.toolbar.pack(fill=tk.X)
+
+        self.tb_left = tk.Frame(self.toolbar, bg=theme.SURFACE)
+        tk.Label(self.tb_left, text="输出位置", bg=theme.SURFACE, fg=theme.INK_MUTE,
+                 font=F(theme.F_LABEL)).pack(side=tk.LEFT)
+        # 路径锚定左侧并限制字符数：路径过长时只显示尾段，避免把右侧控件挤飞
+        self.out_label = tk.Label(self.tb_left, text=self._short_path(self.out_dir),
+                                  bg=theme.SURFACE, fg=theme.INK_SUB,
+                                  font=F(theme.F_LABEL), anchor="w")
+        self.out_label.pack(side=tk.LEFT, padx=(theme.S2, 0))
+        self._btn(self.tb_left, "更改", self.choose_output,
+                  variant="ghost", size="sm").pack(side=tk.LEFT, padx=(theme.S1, 0))
+
+        self.tb_right = tk.Frame(self.toolbar, bg=theme.SURFACE)
         style = ttk.Style()
         style.theme_use("clam")
-        style.configure("IOS.TCombobox", fieldbackground=COL_CARD, background=COL_CARD,
-                        foreground=COL_TEXT, arrowcolor=COL_ACCENT, bordercolor=COL_TRACK,
-                        lightcolor=COL_TRACK, darkcolor=COL_TRACK, padding=4)
-        # side=RIGHT 时"先 pack 的靠最右"，所以先放下拉框，再把「模型」标签贴到它左边
-        ttk.Combobox(row2, textvariable=self.model_var, values=MODELS, state="readonly",
-                     width=22, style="IOS.TCombobox", font=F(10)).pack(side=tk.RIGHT)
-        tk.Label(row2, text="模型", bg=COL_CARD, fg=COL_SUB, font=F(10)).pack(side=tk.RIGHT, padx=(0, 6))
-        self._btn(row2, "质量优先", lambda: self._set_model(QUALITY_MODEL, "质量优先（birefnet-lite，约 10 秒/张）"),
-                  accent=False, width=100, height=30, font_size=10).pack(side=tk.RIGHT, padx=(0, 12))
-        self._btn(row2, "速度优先", lambda: self._set_model(SPEED_MODEL, "速度优先（u2net，约 2 秒/张）"),
-                  accent=False, width=88, height=30, font_size=10).pack(side=tk.RIGHT, padx=(0, 12))
+        # readonly 态的 ComboBox 走 background 而不是 fieldbackground，
+        # 只配 fieldbackground 会得到一块灰底——这里两个都配，并显式映射只读态
+        style.configure("IOS.TCombobox", fieldbackground=theme.SURFACE,
+                        background=theme.SURFACE, foreground=theme.INK,
+                        arrowcolor=theme.INK_SUB, bordercolor=theme.BORDER_STRONG,
+                        lightcolor=theme.BORDER_STRONG, darkcolor=theme.BORDER_STRONG,
+                        relief="flat", padding=5)
+        style.map("IOS.TCombobox",
+                  fieldbackground=[("readonly", theme.SURFACE)],
+                  background=[("readonly", theme.SURFACE)],
+                  foreground=[("readonly", theme.INK)],
+                  selectbackground=[("readonly", theme.SURFACE)],
+                  selectforeground=[("readonly", theme.INK)])
+        # 下拉列表（Listbox）的配色不在 ttk 里，只能走 option 数据库
+        self.root.option_add("*TCombobox*Listbox.background", theme.SURFACE)
+        self.root.option_add("*TCombobox*Listbox.foreground", theme.INK)
+        self.root.option_add("*TCombobox*Listbox.selectBackground", theme.BRAND_SOFT)
+        self.root.option_add("*TCombobox*Listbox.selectForeground", theme.BRAND_INK)
+        self.root.option_add("*TCombobox*Listbox.borderWidth", 0)
+        self.model_box = ttk.Combobox(self.tb_right, textvariable=self.model_var,
+                                      values=MODELS, state="readonly", width=21,
+                                      style="IOS.TCombobox", font=F(theme.F_LABEL))
+        self.model_label = tk.Label(self.tb_right, text="模型", bg=theme.SURFACE,
+                                    fg=theme.INK_MUTE, font=F(theme.F_LABEL))
+        # 速度/质量是互斥选项：做成胶囊组，选中态用 tonal 底、未选用 ghost
+        self.model_btns = {
+            SPEED_MODEL: self._btn(
+                self.tb_right, "速度优先",
+                lambda: self._set_model(SPEED_MODEL, "速度优先（u2net，约 2 秒/张）"),
+                variant="tonal", size="sm"),
+            QUALITY_MODEL: self._btn(
+                self.tb_right, "质量优先",
+                lambda: self._set_model(QUALITY_MODEL, "质量优先（birefnet-lite，约 10 秒/张）"),
+                variant="ghost", size="sm"),
+        }
+        self._layout_toolbar(False)
 
-        # 卡片2：预览（高度交给 expand 撑满，不跟随内容，否则图片一多就把底栏顶飞）
-        card2 = RoundedFrame(outer, autosize=False, height=180)
-        card2.pack(fill=tk.BOTH, expand=True, pady=(14, 0))
+        # ── 卡片 2：预览（expand 撑满，不跟随内容，否则图片一多就把底栏顶飞）──
+        card2 = RoundedFrame(self.outer, autosize=False, height=120)
+        card2.pack(fill=tk.BOTH, expand=True, pady=(theme.S3, 0))
         c2 = card2.inner
-        # height 给一个小值：Canvas 默认 265px 的"请求高度"会把卡片3（含完成面板）
-        # 顶出窗口，expand=True 仍会把它撑满剩余空间，但允许在需要时收缩。
-        self.canvas = tk.Canvas(c2, bg=COL_CARD, highlightthickness=0, bd=0, height=180)
-        vsb = ttk.Scrollbar(c2, orient=tk.VERTICAL, command=self.canvas.yview)
-        self.canvas.configure(yscrollcommand=vsb.set)
-        vsb.pack(side=tk.RIGHT, fill=tk.Y)
+
+        head2 = tk.Frame(c2, bg=theme.SURFACE)
+        head2.pack(fill=tk.X, pady=(0, theme.S2))
+        tk.Label(head2, text="预览", bg=theme.SURFACE, fg=theme.INK,
+                 font=F(theme.F_SECTION, True)).pack(side=tk.LEFT)
+        self.preview_meta = tk.Label(head2, text="输出 1200 × 1200 · 白底 JPG",
+                                     bg=theme.SURFACE, fg=theme.INK_MUTE,
+                                     font=F(theme.F_LABEL))
+        self.preview_meta.pack(side=tk.RIGHT)
+
+        body = tk.Frame(c2, bg=theme.SURFACE)
+        body.pack(fill=tk.BOTH, expand=True)
+        # height 给小值：Canvas 默认 265px 的"请求高度"会把卡片3（含完成面板）顶出窗口
+        self._sb_shown, self._syncing = True, False
+        self.canvas = tk.Canvas(body, bg=theme.SURFACE, highlightthickness=0, bd=0, height=150)
+        style.configure("IOS.Vertical.TScrollbar", background=theme.BORDER_STRONG,
+                        troughcolor=theme.SURFACE, bordercolor=theme.SURFACE,
+                        lightcolor=theme.BORDER_STRONG, darkcolor=theme.BORDER_STRONG,
+                        arrowcolor=theme.INK_MUTE, relief="flat", arrowsize=10, width=9)
+        self._vsb = ttk.Scrollbar(body, orient=tk.VERTICAL, command=self.canvas.yview,
+                                  style="IOS.Vertical.TScrollbar")
+        self.canvas.configure(yscrollcommand=self._vsb.set)
+        self._vsb.pack(side=tk.RIGHT, fill=tk.Y)
         self.canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        self._grid = tk.Frame(self.canvas, bg=COL_CARD)
-        gwin = self.canvas.create_window((4, 4), anchor="nw", window=self._grid)
-        self._grid.bind("<Configure>",
-                        lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
-        self.canvas.bind("<Configure>",
-                         lambda e: self.canvas.itemconfigure(gwin, width=e.width - 8))
+        self._grid = tk.Frame(self.canvas, bg=theme.SURFACE)
+        self._gwin = self.canvas.create_window((0, 0), anchor="nw", window=self._grid)
+        self._grid.bind("<Configure>", self._on_grid_configure)
+        self.canvas.bind("<Configure>", self._on_canvas_configure)
         self.canvas.bind_all("<MouseWheel>",
                              lambda e: self.canvas.yview_scroll(int(-e.delta / 120), "units"))
-        self.hint = tk.Label(c2, text="把图片或文件夹拖到此处，或点击「＋ 添加图片」\n"
-                                      "支持 jpg / png / webp / bmp / tif 等格式",
-                             bg=COL_CARD, fg=COL_HINT, font=F(14), justify=tk.CENTER)
-        self.hint.place(relx=0.5, rely=0.45, anchor=tk.CENTER)
 
-        # 卡片3：底部
-        card3 = RoundedFrame(outer)
-        card3.pack(fill=tk.X, pady=(14, 0))
+        # 空状态：一句主提示 + 一句格式说明，替代原来两行同号的灰字
+        self.hint = tk.Frame(body, bg=theme.SURFACE)
+        tk.Label(self.hint, text="把图片拖到这里", bg=theme.SURFACE, fg=theme.INK_SUB,
+                 font=F(theme.F_SECTION)).pack()
+        tk.Label(self.hint, text="或点击上方「添加图片」· 支持 JPG / PNG / WEBP / BMP / TIF",
+                 bg=theme.SURFACE, fg=theme.INK_MUTE,
+                 font=F(theme.F_LABEL)).pack(pady=(theme.S2, 0))
+        self._show_hint()
+
+        # ── 卡片 3：操作 ────────────────────────────────────────────
+        card3 = RoundedFrame(self.outer)
+        card3.pack(fill=tk.X, pady=(theme.S3, 0))
         c3 = card3.inner
-        self.start_btn = self._btn(c3, "开始转换", self.start_convert, accent=True,
-                                   width=BTN_W, height=46, font_size=14, bold=True)
+
+        # 全页唯一的主操作
+        self.start_btn = self._btn(c3, "开始转换", self.start_convert,
+                                   variant="primary", size="lg")
         self.start_btn.pack(fill=tk.X)
 
-        prow = tk.Frame(c3, bg=COL_CARD)
-        prow.pack(fill=tk.X, pady=(14, 0))
-        self.progress = RoundedProgress(prow, width=330)
-        self.progress.pack(side=tk.LEFT)
-        self.status_label = tk.Label(prow, text="请先添加要转换的图片", bg=COL_CARD,
-                                     fg=COL_SUB, font=F(10))
-        self.status_label.pack(side=tk.LEFT, padx=(14, 0))
+        # 进度条平时不占位：0% 的空条没有信息量，只在真的要跑的时候出现
+        self.progress = RoundedProgress(c3, height=8)
+        self.status_label = tk.Label(c3, text="请先添加要转换的图片", bg=theme.SURFACE,
+                                     fg=theme.INK_MUTE, font=F(theme.F_LABEL),
+                                     anchor="w", justify=tk.LEFT)
+        self.status_label.pack(fill=tk.X, pady=(theme.S4, 0))
 
         # 完成面板
-        self.done_frame = tk.Frame(c3, bg=COL_CARD)
-        self.done_row = tk.Frame(self.done_frame, bg=COL_CARD)
-        self.done_row.pack(fill=tk.X, pady=(14, 0))
-        self.done_msg = tk.Label(self.done_row, text="", bg=COL_CARD, fg=COL_OK,
-                                 font=F(12, True), justify=tk.LEFT, wraplength=660)
-        self.done_msg.pack(side=tk.LEFT)
+        self.done_frame = tk.Frame(c3, bg=theme.SURFACE)
+        self.done_row = tk.Frame(self.done_frame, bg=theme.SURFACE)
+        self.done_row.pack(fill=tk.X, pady=(theme.S3, 0))
+        self.done_msg = tk.Label(self.done_row, text="", bg=theme.SURFACE, fg=COL_OK,
+                                 font=F(theme.F_BODY, True), justify=tk.LEFT,
+                                 anchor="w", wraplength=620)
+        self.done_msg.pack(side=tk.LEFT, anchor="w")
         self.open_btn = self._btn(self.done_row, "打开输出文件夹", self.open_output,
-                                  accent=False, width=170, height=36, font_size=11)
-        self.open_btn.pack(side=tk.LEFT, padx=(16, 0))
-        self.fail_msg = tk.Label(self.done_frame, text="", bg=COL_CARD, fg=COL_DANGER,
-                                 font=F(10), justify=tk.LEFT, wraplength=870)
-        self.fail_msg.pack(anchor="w", pady=(8, 0))
+                                  variant="secondary", size="sm")
+        self.open_btn.pack(side=tk.LEFT, padx=(theme.S3, 0))
+        self.fail_msg = tk.Label(self.done_frame, text="", bg=theme.SURFACE, fg=theme.DANGER,
+                                 font=F(theme.F_LABEL), justify=tk.LEFT,
+                                 anchor="w", wraplength=800)
+        self.fail_msg.pack(anchor="w", pady=(theme.S2, 0))
+
         # 拖拽目标覆盖：根窗口 + 预览区及其子件
-        self._drop_widgets = [self.root, outer, c2, self.canvas, self._grid, self.hint]
+        self._drop_widgets = [self.root, self.outer, c2, body, self.canvas,
+                              self._grid, self.hint]
+
+        # 窗口尺寸变化 → 切换密度 / 重排列数
+        self.root.bind("<Configure>", self._on_resize, add="+")
+
+    # ---------------------------------------------------------- 响应式
+    def _layout_toolbar(self, compact: bool) -> None:
+        """输出位置与模型控件：宽屏一行左右分置，窄屏折成上下两行。"""
+        for w in (self.tb_left, self.tb_right):
+            w.pack_forget()
+        kids = [self.model_btns[SPEED_MODEL], self.model_btns[QUALITY_MODEL],
+                self.model_label, self.model_box]
+        for w in kids:
+            w.pack_forget()
+        if compact:
+            # 窄屏：速度/质量靠左，模型选择靠右，一行两簇，不浪费整行
+            self.tb_left.pack(fill=tk.X)
+            self.tb_right.pack(fill=tk.X, pady=(theme.S2, 0))
+            self.model_btns[SPEED_MODEL].pack(side=tk.LEFT)
+            self.model_btns[QUALITY_MODEL].pack(side=tk.LEFT, padx=(theme.S1, 0))
+            self.model_box.pack(side=tk.RIGHT)
+            self.model_label.pack(side=tk.RIGHT, padx=(0, theme.S1))
+        else:
+            self.tb_left.pack(side=tk.LEFT)
+            self.tb_right.pack(side=tk.RIGHT)
+            self.model_box.pack(side=tk.RIGHT)
+            self.model_label.pack(side=tk.RIGHT, padx=(0, theme.S1))
+            self.model_btns[QUALITY_MODEL].pack(side=tk.RIGHT, padx=(0, theme.S3))
+            self.model_btns[SPEED_MODEL].pack(side=tk.RIGHT, padx=(0, theme.S2))
+
+    def _on_resize(self, event) -> None:
+        if event.widget is not self.root:
+            return
+        compact = event.width < theme.BREAKPOINT
+        if compact != self._compact:
+            self._compact = compact
+            self._apply_density(compact)
+            self._layout_toolbar(compact)
+            self._layout_done(compact)
+        cols = self._cols_for(event.width)
+        if cols != self._cols:
+            self._cols = cols
+            self._relayout_grid()
+        self.done_msg.configure(wraplength=max(280, event.width - 320))
+        self.fail_msg.configure(wraplength=max(280, event.width - 120))
+
+    def _apply_density(self, compact: bool) -> None:
+        pad = theme.S4 if compact else theme.S5
+        self.outer.pack_configure(padx=theme.S4 if compact else theme.GUTTER,
+                                  pady=(pad, pad))
+        if compact:
+            self.subtitle.pack_forget()
+        else:
+            self.subtitle.pack(anchor="w", pady=(theme.S1, 0))
+
+    def _layout_done(self, compact: bool) -> None:
+        """完成面板：窄屏时按钮换到下一行，避免把提示文字压成两三个字一行。"""
+        for w in (self.done_msg, self.open_btn):
+            w.pack_forget()
+        if compact:
+            self.done_msg.pack(anchor="w", fill=tk.X)
+            self.open_btn.pack(anchor="w", pady=(theme.S2, 0))
+        else:
+            self.done_msg.pack(side=tk.LEFT, anchor="w")
+            self.open_btn.pack(side=tk.LEFT, padx=(theme.S3, 0))
+
+    @staticmethod
+    def _cols_for(width: int) -> int:
+        """按可用宽度算缩略图列数：窗口越宽排得越多，最少 2 列。"""
+        avail = width - 2 * theme.GUTTER - 2 * theme.CARD_PAD
+        cols = int(avail // (THUMB + 14))
+        return max(2, min(10, cols))
+
+    def _relayout_grid(self) -> None:
+        for i, card in enumerate(self._grid.winfo_children()):
+            card.grid_configure(row=i // self._cols, column=i % self._cols,
+                                padx=6, pady=6)
+
+    def _show_hint(self) -> None:
+        self.hint.place(relx=0.5, rely=0.5, anchor=tk.CENTER)
+
+    def _on_grid_configure(self, _e=None) -> None:
+        self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+        self._sync_scrollbar()
+
+    def _on_canvas_configure(self, e) -> None:
+        self.canvas.itemconfigure(self._gwin, width=e.width)
+        self._sync_scrollbar()
+
+    def _sync_scrollbar(self) -> None:
+        """图片少到不需要滚动时收起滚动条，避免一条常驻的灰色竖条破坏版面。"""
+        if self._syncing:
+            return
+        self._syncing = True
+        try:
+            need = self._grid.winfo_reqheight() > self.canvas.winfo_height() + 12
+            if need == self._sb_shown:
+                return
+            self._sb_shown = need
+            if need:
+                self._vsb.pack(side=tk.RIGHT, fill=tk.Y, before=self.canvas)
+            else:
+                self._vsb.pack_forget()
+        finally:
+            self._syncing = False
+
+    def _sync_model_buttons(self) -> None:
+        cur = self.model_var.get()
+        for name, btn in self.model_btns.items():
+            btn.set_variant("tonal" if name == cur else "ghost")
 
     def _set_busy(self, busy: bool) -> None:
         self.busy = busy
         for b in self._buttons:
             b.set_enabled(not busy)
         if busy:
+            self._show_progress(True)
             self.progress.set(0)
         else:
             self.start_btn.set_enabled(True)
+
+    def _show_progress(self, show: bool) -> None:
+        """进度条按需出现/收起，收起时把状态文字的间距补回来。"""
+        if show and not self.progress.winfo_ismapped():
+            self.progress.pack(fill=tk.X, pady=(theme.S4, theme.S2),
+                               before=self.status_label)
+            self.status_label.pack_configure(pady=(0, 0))
+        elif not show and self.progress.winfo_ismapped():
+            self.progress.pack_forget()
+            self.status_label.pack_configure(pady=(theme.S4, 0))
+
+    def _restore_status(self) -> None:
+        """恢复状态行（完成后它被结果面板顶替掉了）。"""
+        if self.status_label.winfo_ismapped():
+            return
+        pad = (0, 0) if self.progress.winfo_ismapped() else (theme.S4, 0)
+        self.status_label.pack(fill=tk.X, pady=pad)
 
     # ------------------------------------------------------------- 模型预热
     def _warmup(self) -> None:
@@ -407,6 +682,7 @@ class WhiteBgApp:
         self.model_var.set(name)
         self._model_ready = False  # 切换后需要重新预热
         self.status_label.configure(text=label, fg=COL_SUB)
+        self._sync_model_buttons()
         self._warmup()
 
     # --------------------------------------------------------------- 文件
@@ -447,7 +723,8 @@ class WhiteBgApp:
         if added:
             self.count_label.configure(text=f"已选 {len(self.files)} 张图片")
             self.status_label.configure(
-                text=f"已加入 {added} 张（共 {len(self.files)} 张），点击「开始转换」")
+                text=f"已加入 {added} 张（共 {len(self.files)} 张），点击「开始转换」",
+                fg=theme.INK_MUTE)
             self.refresh_preview()
 
     def _add_one(self, f: Path) -> bool:
@@ -472,8 +749,11 @@ class WhiteBgApp:
         self.files.clear()
         self._seen.clear()
         self.count_label.configure(text="已选 0 张图片")
-        self.status_label.configure(text="请先添加要转换的图片")
+        self.status_label.configure(text="请先添加要转换的图片", fg=theme.INK_MUTE)
         self.done_frame.pack_forget()
+        self._show_progress(False)
+        self.progress.set(0)
+        self._restore_status()
         self.refresh_preview()
 
     def choose_output(self) -> None:
@@ -532,6 +812,7 @@ class WhiteBgApp:
             return
         self.finished = False
         self.done_frame.pack_forget()
+        self._restore_status()
         self._set_busy(True)
         self._convert_start = time.time()
         self.status_label.configure(text="正在准备…")
@@ -600,9 +881,9 @@ class WhiteBgApp:
                         ph = _thumb_to_photo(im)  # 主线程内转换，Tk 安全
                         if ph is not None:
                             self.thumbs[str(getattr(card, "_f"))] = ph
-                            holder.configure(image=ph, text="", width=0, height=0)
+                            holder.configure(image=ph, text="")
                         else:
-                            holder.configure(text="无法预览", width=13, height=5)
+                            holder.configure(text="无法预览", fg=COL_SUB)
         except queue.Empty:
             pass
         # 进度条动画：加载中整条来回扫；转换中轻微呼吸，肉眼可见“在工作”
@@ -666,10 +947,12 @@ class WhiteBgApp:
                 text=f"✓ 任务完成！成功 {ok} 张 · 耗时 {dur:.0f} 秒\n白底图已放在：{out}", fg=COL_OK)
         else:
             self.done_msg.configure(
-                text=f"任务完成（{ok} 成功 / {fail} 失败）\n白底图已放在：{out}", fg="#B26A00")
+                text=f"任务完成（{ok} 成功 / {fail} 失败）\n白底图已放在：{out}",
+                fg=theme.WARNING)
             self.fail_msg.configure(text="失败明细：\n" + "\n".join(failures[:8]))
-        self.status_label.configure(
-            text=f"已完成：成功 {ok} 张，失败 {fail} 张（{dur:.0f} 秒）", fg=COL_TEXT)
+        # 结果面板接管状态区：进度行与状态行让位，避免同一件事说两遍
+        self._show_progress(False)
+        self.status_label.pack_forget()
         self.done_frame.pack(fill=tk.X)
         engine.log(f"[完成] 成功 {ok} 张，失败 {fail} 张，输出 {out}")
 
@@ -681,24 +964,57 @@ class WhiteBgApp:
             w.destroy()
         self.thumbs.clear()
         if not self.files:
+            self._show_hint()
             return
         self.hint.place_forget()
         for i, f in enumerate(self.files):
             card = tk.Frame(self._grid, bg=COL_CARD)
-            card.grid(row=i // COLS, column=i % COLS, padx=7, pady=7, sticky="n")
-            holder = tk.Label(card, text="…", width=13, height=5, bg=COL_TRACK, fg=COL_SUB)
-            holder.pack()
+            card.grid(row=i // self._cols, column=i % self._cols,
+                      padx=6, pady=6, sticky="n")
+            holder_box = tk.Frame(card, width=THUMB, height=THUMB, bg=COL_TRACK)
+            holder_box.pack()
+            holder_box.pack_propagate(False)
+            holder = tk.Label(holder_box, bg=COL_TRACK)
+            holder.pack(fill=tk.BOTH, expand=True)
             card._holder = holder
             card._f = f
-            name = f.name
-            tk.Label(card, text=name if len(name) <= 13 else name[:10] + "…",
-                     bg=COL_CARD, fg=COL_TEXT, font=F(9), width=14).pack(pady=(4, 0))
-            btn = tk.Label(card, text="✕", bg=COL_CARD, fg=COL_DANGER, cursor="hand2",
-                           font=F(11, True))
-            btn.pack(pady=(2, 0))
+            name_row = tk.Frame(card, bg=COL_CARD)
+            name_row.pack(fill=tk.X, pady=(theme.S1, 0))
+            short = f.name if len(f.name) <= 11 else f.name[:9] + "…"
+            tk.Label(name_row, text=short, bg=COL_CARD, fg=COL_SUB,
+                     font=F(theme.F_LABEL), anchor="w").pack(side=tk.LEFT)
+            # 默认灰色（一排红叉太吵），悬停才变红并给浅红底，指向明确
+            btn = tk.Label(name_row, text="✕", bg=COL_CARD, fg=theme.INK_MUTE,
+                           cursor="hand2", font=F(theme.F_LABEL, True))
+            btn.pack(side=tk.RIGHT, padx=(theme.S1, 0))
             btn.bind("<Button-1>", lambda e, idx=i: self.remove_file(idx))
-            btn.bind("<Enter>", lambda e: e.widget.configure(fg="#D00000"))
-            btn.bind("<Leave>", lambda e: e.widget.configure(fg=COL_DANGER))
+            btn.bind("<Enter>", lambda e: e.widget.configure(
+                fg=theme.DANGER, bg=theme.DANGER_SOFT))
+            btn.bind("<Leave>", lambda e: e.widget.configure(
+                fg=theme.INK_MUTE, bg=COL_CARD))
+
+        # 末尾补一格「继续添加」：填满最后一行，同时把"还能继续加图"说清楚
+        idx = len(self.files)
+        addtile = tk.Frame(self._grid, bg=COL_CARD)
+        addtile.grid(row=idx // self._cols, column=idx % self._cols,
+                     padx=6, pady=6, sticky="n")
+        box = tk.Frame(addtile, width=THUMB, height=THUMB, bg=theme.SURFACE_ALT,
+                       cursor="hand2", highlightthickness=1,
+                       highlightbackground=theme.BORDER)
+        box.pack()
+        box.pack_propagate(False)
+        plus = tk.Label(box, text="＋", bg=theme.SURFACE_ALT, fg=theme.INK_MUTE,
+                        font=F(theme.F_TITLE), cursor="hand2")
+        plus.place(relx=0.5, rely=0.5, anchor="center")
+        for widget in (box, plus):
+            widget.bind("<Button-1>", lambda e: self.add_files())
+            widget.bind("<Enter>", lambda e: (
+                box.configure(bg=theme.BRAND_SOFT), plus.configure(bg=theme.BRAND_SOFT)))
+            widget.bind("<Leave>", lambda e: (
+                box.configure(bg=theme.SURFACE_ALT), plus.configure(bg=theme.SURFACE_ALT)))
+        tk.Label(addtile, text="继续添加", bg=COL_CARD, fg=theme.INK_MUTE,
+                 font=F(theme.F_LABEL)).pack(pady=(theme.S1, 0))
+
         gen = self._preview_gen
         files = list(self.files)
 

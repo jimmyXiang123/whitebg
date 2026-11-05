@@ -9,7 +9,7 @@
     python -m whitebg -i in -o out    # 命令行批处理
 """
 
-__version__ = "2.0.0"
+__version__ = "2.1.0"
 __author__ = "whitebg contributors"
 __license__ = "MIT"
 

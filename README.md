@@ -190,6 +190,7 @@ After building, `packaging/scan_win7.py` performs a static audit (checking for l
 │   ├── __init__.py        version and metadata (no heavy imports; `import` stays in the millisecond range)
 │   ├── engine.py          conversion engine + CLI (PIL/rembg imported lazily inside functions)
 │   ├── gui.py             Tkinter GUI
+│   ├── theme.py           design tokens: colours, type scale, spacing, breakpoints
 │   └── __main__.py        unified entry point for `python -m whitebg`
 ├── run_gui.py             GUI launcher (PyInstaller points here)
 ├── run_cli.py             CLI launcher
@@ -200,6 +201,7 @@ After building, `packaging/scan_win7.py` performs a static audit (checking for l
 ├── tests/                 unit tests (no model needed, runs in CI)
 ├── docs/
 │   ├── windows7.md        Win7 build: dependency ceilings, requirements, verification log
+│   ├── ui.md              design tokens, contrast ratios, component variants, breakpoints
 │   └── build.md           packaging in depth
 ├── requirements.txt       runtime dependencies
 ├── requirements-win7.txt  pinned versions for the Win7 build
