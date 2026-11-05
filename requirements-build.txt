@@ -9,3 +9,7 @@
 -r requirements.txt
 
 pyinstaller>=6.0
+
+# 重新生成演示视频（tools/）需要：ffmpeg 走 imageio-ffmpeg 自带的二进制
+imageio-ffmpeg>=0.5
+numpy>=1.26

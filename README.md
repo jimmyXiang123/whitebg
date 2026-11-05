@@ -32,7 +32,7 @@ white main image, subject auto-centred with even padding on all sides.
 
 ![Before and after](docs/images/before-after.jpg)
 
-> ▶ 18-second demo video (1280×720, silent): **[docs/demo.mp4](docs/demo.mp4)**
+> ▶ 20-second demo video (1280×720, with music): **[docs/demo.mp4](docs/demo.mp4)**
 
 ## Topics covered
 
@@ -202,7 +202,9 @@ After building, `packaging/scan_win7.py` performs a static audit (checking for l
 ├── docs/
 │   ├── windows7.md        Win7 build: dependency ceilings, requirements, verification log
 │   ├── ui.md              design tokens, contrast ratios, component variants, breakpoints
+│   ├── video.md           demo video: storyboard, timing, music brief, acceptance list
 │   └── build.md           packaging in depth
+├── tools/                 make_bgm.py / make_video.py (regenerate the demo video)
 ├── requirements.txt       runtime dependencies
 ├── requirements-win7.txt  pinned versions for the Win7 build
 ├── README.md              this file (English)

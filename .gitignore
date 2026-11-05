@@ -43,3 +43,6 @@ htmlcov/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# 演示配乐的中间产物（只留 docs/assets/bgm.mp3）
+docs/assets/*.wav

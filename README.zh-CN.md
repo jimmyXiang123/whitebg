@@ -27,7 +27,7 @@
 
 ![前后对比](docs/images/before-after.jpg)
 
-> ▶ 18 秒演示视频（1280×720，无配音）：**[docs/demo.mp4](docs/demo.mp4)**
+> ▶ 20 秒演示视频（1280×720，带配乐）：**[docs/demo.mp4](docs/demo.mp4)**
 
 ## 涵盖的主题（Topics）
 
@@ -196,7 +196,9 @@ Windows 7 兼容版需要 Python 3.8 环境，步骤见 [docs/windows7.md](docs/
 ├── docs/
 │   ├── windows7.md        Win7 兼容版：依赖天花板、环境要求、验证记录
 │   ├── ui.md              设计令牌、对比度、组件变体与断点
+│   ├── video.md           演示视频：分镜、时间轴、配乐、验收清单
 │   └── build.md           打包详解
+├── tools/                 重新生成演示视频的脚本（配乐 + 逐帧渲染）
 ├── requirements.txt       运行时依赖
 ├── requirements-win7.txt  Win7 构建的版本锁定
 ├── README.md              英文版
